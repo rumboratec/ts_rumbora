@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TS Analyzer Pro | Analisador MPEG-TS & ISDB-T</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <!-- 1. HEADER (TOPO) -->
+  <header class="app-header">
+    <div class="logo-area">
+      <div class="logo-icon">📡</div>
+      <div>
+        <h1>TS Analyzer Pro <span class="badge-tech">TSDuck</span> <span class="badge-tech">ISDB-T / SBTVD</span></h1>
+        <p class="subtitle">Análise Profissional de Transport Stream (MPEG-TS), ETR 101 290, Tabelas PSI/SI e Streaming IP</p>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <button class="btn btn-secondary btn-sm" onclick="openApiConfigModal()" title="Configurar quais campos serão expostos na API JSON e Grafana">
+        <span>⚙️</span> Configurar API JSON
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="exportJsonReport()" title="Baixar Diagnóstico Completo em JSON">
+        <span>💾</span> Diagnóstico JSON
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="exportCsvReport()" title="Exportar dados de PIDs em planilha CSV">
+        <span>📊</span> Exportar CSV
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="exportPdfReport()" title="Gerar Laudo Técnico Formal em PDF">
+        <span>📄</span> Laudo Técnico (PDF)
+      </button>
+      <div id="statusIndicator" class="status-indicator idle">Pronto</div>
+    </div>
+  </header>
+
+  <!-- WATCHDOG ALERT BANNER -->
+  <div id="watchdogBanner" class="watchdog-banner hidden">
+    <div class="watchdog-pulse"></div>
+    <div class="watchdog-content">
+      <strong id="watchdogTitle">⚠️ [Watchdog] Recuperação Automática de Sinal</strong>
+      <span id="watchdogMessage">Tentando restabelecer sintonia com o sintonizador...</span>
+    </div>
+  </div>
+
+  <!-- 2. CONTROLE DE ENTRADA (SINTONIZADOR) -->
+  <section class="panel source-panel">
+    <div class="source-mode-toggle">
+      <button id="btnModeUhf" class="btn-mode active" onclick="switchTuningMode('uhf')">📻 Canal UHF (14 a 69)</button>
+      <button id="btnModeIp" class="btn-mode" onclick="switchTuningMode('ip')">🌐 Rede IP (UDP / SRT / RIST)</button>
+      <button id="btnModeUpload" class="btn-mode" onclick="switchTuningMode('upload')">📤 Upload de Arquivo (.ts)</button>
+    </div>
+
+    <!-- Modo 1: Canal Físico UHF (14 a 69) -->
+    <div id="modeUhfSection" class="source-inputs">
+      <div class="input-field" style="flex: 1.2; min-width: 260px;">
+        <label for="uhfSelect">Canal Físico UHF (Padrão Brasileiro)</label>
+        <select id="uhfSelect" onchange="onUhfSelectChange()"></select>
+      </div>
+      <div class="input-field" style="flex: 1; min-width: 180px;">
+        <label>Frequência Central Calculada</label>
+        <div id="uhfCalculatedFreq" class="freq-display-badge">473.143 MHz</div>
+      </div>
+      <div class="input-field small" title="Número do adaptador DVB no Linux (/dev/dvb/adapterX). Padrão = 0 para 1 dongle USB conectado.">
+        <label for="adapterUhf">Adapter DVB <span class="text-muted" style="font-size: 0.7rem; font-weight: normal;">(USB = 0)</span></label>
+        <input id="adapterUhf" type="text" placeholder="0" value="0">
+      </div>
+      <div class="input-actions">
+        <button id="btnStartUhf" class="btn btn-primary" onclick="startCaptureByUhf()">
+          <span class="btn-icon">▶</span> Sintonizar Canal
+        </button>
+        <button id="btnStopUhf" class="btn btn-danger btn-stop" onclick="stopCapture()" disabled>
+          <span class="btn-icon">⏹</span> Parar
+        </button>
+        <button class="btn btn-warning" onclick="openScanModal()" title="Varre automaticamente as frequências 14 a 69">
+          <span class="btn-icon">⚡</span> Varredura (14 a 69)
+        </button>
+      </div>
+    </div>
+
+    <!-- Modo 2: Streaming IP (UDP / SRT / RIST) -->
+    <div id="modeIpSection" class="source-inputs hidden">
+      <div class="input-field grow">
+        <label for="ipStreamUrl">URL do Fluxo IP</label>
+        <input id="ipStreamUrl" type="text" placeholder="Ex: udp://@239.0.0.1:1234 | srt://127.0.0.1:9000?mode=listener | rist://@0.0.0.0:1234" value="udp://@239.0.0.1:1234">
+      </div>
+      <div class="input-actions">
+        <button id="btnStartIp" class="btn btn-primary" onclick="startCaptureByIp()">
+          <span class="btn-icon">▶</span> Conectar Stream IP
+        </button>
+        <button id="btnStopIp" class="btn btn-danger btn-stop" onclick="stopCapture()" disabled>
+          <span class="btn-icon">⏹</span> Parar
+        </button>
+      </div>
+    </div>
+
+    <!-- Modo 3: Upload de Arquivo .ts (com Auto-Exclusão Imediata) -->
+    <div id="modeUploadSection" class="source-inputs hidden">
+      <div class="input-field grow">
+        <label for="tsFileInput">Selecione o arquivo .ts (excluído automaticamente do servidor após análise)</label>
+        <input id="tsFileInput" type="file" accept=".ts,.m2ts,.trp">
+      </div>
+      <div class="input-actions">
+        <button id="btnUploadFile" class="btn btn-primary" onclick="uploadAndAnalyzeFile()">
+          <span class="btn-icon">📤</span> Enviar & Analisar com TSDuck
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3. TELEMETRIA DE SINAL RF (Logo acima de Visão Geral — visível apenas em Modo UHF) -->
+  <section id="rfSectionPanel" class="panel rf-top-panel">
+    <div class="panel-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h3>📶 Sinal RF & Telemetria</h3>
+        <span class="badge-tech">Demodulador DVB/ISDB-T</span>
+      </div>
+      <span id="rfLockBadge" class="badge-compliance">SEM SINAL</span>
+    </div>
+
+    <div class="rf-tab-cards">
+      <div class="rf-big-card">
+        <div class="rf-big-label">Nível de Sinal RF</div>
+        <div id="rfTabSignal" class="rf-big-value">-- dBm</div>
+        <div class="rf-big-desc">RSSI do Sintonizador</div>
+      </div>
+      <div class="rf-big-card snr-card">
+        <div class="rf-big-label">SNR / C/N</div>
+        <div id="rfTabSnr" class="rf-big-value highlight">-- dB</div>
+        <div class="rf-big-desc">Relação Sinal-Ruído</div>
+      </div>
+      <div class="rf-big-card">
+        <div class="rf-big-label">BER (Bit Error Rate)</div>
+        <div id="rfTabBer" class="rf-big-value">0</div>
+        <div class="rf-big-desc">Taxa de Erros de Bit</div>
+      </div>
+      <div class="rf-big-card">
+        <div class="rf-big-label">Status de Lock</div>
+        <div id="rfTabLock" class="rf-big-value rf-lock-val offline">SEM SINAL</div>
+        <div class="rf-big-desc">Trava do Demodulador</div>
+      </div>
+    </div>
+
+    <div class="snr-quality-bar-wrapper">
+      <div class="snr-quality-label">Qualidade do Sinal (SNR)</div>
+      <div class="snr-quality-track">
+        <div id="snrQualityBar" class="snr-quality-fill" style="width: 0%;"></div>
+      </div>
+      <div class="snr-quality-legend">
+        <span style="color: var(--status-danger);">Crítico (&lt;14 dB)</span>
+        <span style="color: var(--status-warn);">Limiar (14–20 dB)</span>
+        <span style="color: var(--status-ok);">Bom (20–30 dB)</span>
+        <span style="color: #38bdf8;">Excelente (&gt;30 dB)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4. VISÃO GERAL & MUX (Diretamente abaixo de Sinal RF) -->
+  <section class="panel overview-mux-panel">
+    <div class="panel-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h3>📊 Visão Geral & Mux</h3>
+        <span class="badge-tech">Ocupação de Espectro</span>
+      </div>
+      <span id="bitrateBreakdownSummary" class="text-muted">Aguardando dados...</span>
+    </div>
+
+    <div class="stats-cards-grid">
+      <div class="stat-card">
+        <div class="stat-label">Bitrate Total do Mux</div>
+        <div id="statTotalBitrate" class="stat-value highlight">-</div>
+        <div class="stat-sub">Pacotes de 188 bytes</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bitrate Útil (Payload)</div>
+        <div id="statUsefulBitrate" class="stat-value ok">-</div>
+        <div id="statUsefulPercent" class="stat-sub">- % útil</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bitrate Nulo (0x1FFF)</div>
+        <div id="statNullBitrate" class="stat-value muted">-</div>
+        <div id="statNullPercent" class="stat-sub">- % stuffing</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Transport Stream ID</div>
+        <div id="statTsId" class="stat-value">-</div>
+        <div id="statNetworkId" class="stat-sub">Network ID: -</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Pacotes Analisados</div>
+        <div id="statTotalPackets" class="stat-value">-</div>
+        <div id="statSyncErrors" class="stat-sub">Erros Sincronismo: 0</div>
+      </div>
+    </div>
+
+    <div class="bitrate-bar-track" id="bitrateBarTrack" style="margin-top: 14px;">
+      <div class="bar-segment bar-video" style="width: 0%;"></div>
+      <div class="bar-segment bar-audio" style="width: 0%;"></div>
+      <div class="bar-segment bar-tables" style="width: 0%;"></div>
+      <div class="bar-segment bar-other" style="width: 0%;"></div>
+      <div class="bar-segment bar-null" style="width: 100%;"></div>
+    </div>
+    <div class="bitrate-legend">
+      <span class="legend-item"><span class="dot dot-video"></span> Vídeo</span>
+      <span class="legend-item"><span class="dot dot-audio"></span> Áudio</span>
+      <span class="legend-item"><span class="dot dot-tables"></span> Tabelas PSI/SI</span>
+      <span class="legend-item"><span class="dot dot-other"></span> Dados / Ginga</span>
+      <span class="legend-item"><span class="dot dot-null"></span> Null / Padding</span>
+    </div>
+  </section>
+
+  <!-- 4.1 MEDIÇÃO DE ÁUDIO & LOUDNESS (ABNT NBR 15602-2 / CALM ACT) -->
+  <section class="panel loudness-panel">
+    <div class="panel-header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <h3>🔊 Medição de Áudio & Loudness (ABNT NBR 15602-2 / CALM Act)</h3>
+        <span id="loudnessCodecBadge" class="badge-tech">AAC LATM (Padrão SBTVD)</span>
+      </div>
+      <span id="loudnessComplianceBadge" class="badge-compliance ok">CONFORME (-24 LUFS)</span>
+    </div>
+    <div class="loudness-grid">
+      <div class="stat-card">
+        <div class="stat-label">Loudness Integrado</div>
+        <div id="statIntegratedLufs" class="stat-value highlight">-24.0 LUFS</div>
+        <div class="stat-sub">Meta ABNT: -24.0 ± 1.0 LUFS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Short-Term (3s)</div>
+        <div id="statShortTermLufs" class="stat-value ok">-23.8 LUFS</div>
+        <div class="stat-sub">Janela Deslizante de 3s</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">True Peak (Pico Real)</div>
+        <div id="statTruePeak" class="stat-value">-1.8 dBTP</div>
+        <div class="stat-sub">Máximo: ≤ -1.0 dBTP</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Loudness Range (LRA)</div>
+        <div id="statLra" class="stat-value">6.2 LU</div>
+        <div class="stat-sub">Dinâmica do Conteúdo</div>
+      </div>
+      <div class="stat-card loudness-meter-card">
+        <div style="display: flex; justify-content: space-between; font-size: 0.78rem; margin-bottom: 4px;">
+          <span class="stat-label">Nível de Loudness Instantâneo (Momentary)</span>
+          <span id="statMomentaryLufs" class="font-mono" style="color: var(--accent-cyan); font-weight: 700;">-24.1 LUFS</span>
+        </div>
+        <div class="loudness-bar-track">
+          <div id="loudnessBarFill" class="loudness-bar-fill" style="width: 58%;"></div>
+          <div class="loudness-target-marker" title="Meta -24 LUFS"></div>
+        </div>
+        <div class="loudness-bar-scale">
+          <span>-40</span>
+          <span>-30</span>
+          <span style="color: var(--status-ok); font-weight: 700;">-24 (Meta)</span>
+          <span>-18</span>
+          <span style="color: var(--status-danger);">-10</span>
+          <span>0 LUFS</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5. FRAME DE VÍDEO + CLOSED CAPTION + PROGRAMAS & SERVIÇOS -->
+  <section class="overview-grid">
+    <!-- Esquerda: Frame de Vídeo com Ajuste de Intervalo e Closed Caption -->
+    <div class="panel frame-container">
+      <div class="panel-header" style="flex-wrap: wrap; gap: 8px;">
+        <div>
+          <h3>Frame de Vídeo & CC</h3>
+          <span id="frameTimestamp" class="text-muted">Aguardando sinal...</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+          <div class="service-decode-selector" style="display: flex; align-items: center; gap: 6px;">
+            <label for="serviceSelectDecode" style="font-size: 0.76rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">Serviço:</label>
+            <select id="serviceSelectDecode" onchange="onSelectedServiceChange()" title="Selecione qual serviço do MUX será decodificado no vídeo e Closed Caption" style="background: #090d16; border: 1px solid var(--border-color); color: var(--text-main); font-size: 0.76rem; padding: 4px 8px; border-radius: var(--radius-sm); max-width: 190px;">
+              <option value="AUTO">Automático (Principal)</option>
+            </select>
+          </div>
+          <div class="frame-interval-controls">
+            <span class="ctrl-label">Intervalo:</span>
+            <button class="btn-interval" onclick="setFrameInterval(1)">1s</button>
+            <button class="btn-interval" onclick="setFrameInterval(2)">2s</button>
+            <button class="btn-interval active" onclick="setFrameInterval(3)">3s</button>
+            <button class="btn-interval" onclick="setFrameInterval(5)">5s</button>
+            <button class="btn-interval" onclick="setFrameInterval(10)">10s</button>
+          </div>
+        </div>
+      </div>
+      <div class="frame-wrapper">
+        <img id="videoFrame" alt="Aguardando frame de vídeo...">
+      </div>
+
+      <!-- Closed Caption Live Box -->
+      <div class="cc-container">
+        <div class="cc-header">
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <span class="badge-tech">CC</span>
+            <span style="font-weight: 600; font-size: 0.8rem;">Closed Caption (Legenda Oculta)</span>
+          </div>
+          <button id="btnToggleCc" class="btn-cc-toggle active" onclick="toggleClosedCaption()">CC: Ativado</button>
+        </div>
+        <div id="ccDisplayBox" class="cc-box">
+          <div id="ccText" class="cc-text">Aguardando legendas no fluxo...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Direita: Programas & Serviços (2 lado a lado, ou passador numérico se > 2) -->
+    <div class="panel services-panel-side">
+      <div class="panel-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3>📺 Programas & Serviços</h3>
+          <span id="badgeServiceCount" class="tab-count">0</span>
+        </div>
+        <!-- Barra de Paginação / Tabs se houver mais de 2 canais -->
+        <div id="servicesPagerBar" class="services-pager-bar hidden">
+          <button class="btn-pager" onclick="prevServicePage()" title="Canal anterior">◀</button>
+          <div id="serviceTabsContainer" class="service-numeric-tabs"></div>
+          <button class="btn-pager" onclick="nextServicePage()" title="Próximo canal">▶</button>
+        </div>
+      </div>
+
+      <div id="servicesContainer" class="services-side-list">
+        <div class="empty-state">Nenhum canal detectado. Inicie a sintonia.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. ABAS TÉCNICAS NAVEGÁVEIS -->
+  <nav class="main-tabs">
+    <button class="tab-btn active" data-tab="tables" onclick="switchTab('tables')">📑 Tabelas PSI/SI</button>
+    <button class="tab-btn" data-tab="pids" onclick="switchTab('pids')">🔢 Tabela de PIDs <span id="badgePidCount" class="tab-count">0</span></button>
+    <button class="tab-btn" data-tab="alarms" onclick="switchTab('alarms')">🚨 Alarmes ETR 290 <span id="badgeAlarmCount" class="tab-count" style="background: rgba(239, 68, 68, 0.2); color: #fca5a5;">0</span></button>
+    <button class="tab-btn" data-tab="logs" onclick="switchTab('logs')">💻 Terminal & Logs</button>
+  </nav>
+
+  <!-- TAB 1: TABELAS PSI/SI -->
+  <div id="tab-tables" class="tab-content active">
+    <div class="sub-tabs">
+      <button id="subtab-btn-eit" class="sub-tab-btn active" onclick="switchSubTable('eit')">EIT (Guia EPG)</button>
+      <button id="subtab-btn-pat" class="sub-tab-btn" onclick="switchSubTable('pat')">PAT (PID 0)</button>
+      <button id="subtab-btn-pmt" class="sub-tab-btn" onclick="switchSubTable('pmt')">PMT</button>
+      <button id="subtab-btn-sdt" class="sub-tab-btn" onclick="switchSubTable('sdt')">SDT (Canais)</button>
+      <button id="subtab-btn-nit" class="sub-tab-btn" onclick="switchSubTable('nit')">NIT (Rede)</button>
+      <button id="subtab-btn-tot" class="sub-tab-btn" onclick="switchSubTable('tot')">TOT / TDT (Hora)</button>
+      <button id="subtab-btn-raw" class="sub-tab-btn" onclick="switchSubTable('raw')">Bruto / Seções</button>
+    </div>
+
+    <div id="subtab-eit" class="sub-tab-content active panel">
+      <div class="panel-header" style="margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+        <div>
+          <h3>EIT — Event Information Table (PID 0x0012) — Guia EPG</h3>
+          <span id="epgLastUpdateText" class="text-muted">Última atualização: Aguardando carga inicial</span>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <div class="btn-group-segmented">
+            <button id="btnEpgViewTimeline" class="btn-segmented active" onclick="setEpgViewMode('timeline')" title="Visualização em Grade de Linha do Tempo (No Ar & Próximos)">⏱️ Linha do Tempo</button>
+            <button id="btnEpgViewList" class="btn-segmented" onclick="setEpgViewMode('list')" title="Visualização em Lista Paginada">📋 Lista Paginada</button>
+          </div>
+          <button id="btnRefreshEpg" class="btn btn-primary btn-sm" onclick="manualRefreshEpg()">
+            <span>🔄</span> Atualizar EPG
+          </button>
+        </div>
+      </div>
+      <div id="eitDetails"><div class="empty-state">Aguardando eventos EPG...</div></div>
+    </div>
+    <div id="subtab-pat" class="sub-tab-content panel">
+      <h3>PAT — Program Association Table (PID 0x0000)</h3>
+      <div id="patDetails"><div class="empty-state">Aguardando seções PAT...</div></div>
+    </div>
+    <div id="subtab-pmt" class="sub-tab-content panel">
+      <h3>PMT — Program Map Table</h3>
+      <div id="pmtDetails"><div class="empty-state">Aguardando seções PMT...</div></div>
+    </div>
+    <div id="subtab-sdt" class="sub-tab-content panel">
+      <h3>SDT — Service Description Table (PID 0x0011)</h3>
+      <div id="sdtDetails"><div class="empty-state">Aguardando seções SDT...</div></div>
+    </div>
+    <div id="subtab-nit" class="sub-tab-content panel">
+      <h3>NIT — Network Information Table (PID 0x0010)</h3>
+      <div id="nitDetails"><div class="empty-state">Aguardando seções NIT...</div></div>
+    </div>
+    <div id="subtab-tot" class="sub-tab-content panel">
+      <h3>TOT / TDT — Time Offset & Date Table (PID 0x0014)</h3>
+      <div id="totDetails"><div class="empty-state">Aguardando seções TOT/TDT...</div></div>
+    </div>
+    <div id="subtab-raw" class="sub-tab-content panel">
+      <h3>Seções Brutas</h3>
+      <pre id="rawTablesText" class="code-view">Nenhuma tabela bruta capturada.</pre>
+    </div>
+  </div>
+
+  <!-- TAB 2: TABELA DE PIDS -->
+  <div id="tab-pids" class="tab-content">
+    <div class="panel">
+      <div class="panel-header-toolbar">
+        <div>
+          <h3>Mapeamento Completo de PIDs</h3>
+          <span class="text-muted">Todos os Packet Identifiers encontrados no fluxo</span>
+        </div>
+        <div class="table-filters">
+          <input id="pidSearchInput" type="text" placeholder="Filtrar por PID, tipo ou canal..." oninput="filterPidTable()">
+          <select id="pidCategoryFilter" onchange="filterPidTable()">
+            <option value="ALL">Todas as categorias</option>
+            <option value="Vídeo">Vídeo</option>
+            <option value="Áudio">Áudio</option>
+            <option value="Tabela">Tabelas PSI/SI</option>
+            <option value="Null">Null / Preenchimento</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table id="pidsTable" class="data-table">
+          <thead>
+            <tr>
+              <th onclick="sortPidTable('id')">PID (Dec / Hex) ↕</th>
+              <th onclick="sortPidTable('category')">Categoria ↕</th>
+              <th onclick="sortPidTable('description')">Descrição / Codec ↕</th>
+              <th onclick="sortPidTable('packets')">Pacotes ↕</th>
+              <th onclick="sortPidTable('bitrate')">Bitrate (kbps) ↕</th>
+              <th onclick="sortPidTable('percent')">% Mux ↕</th>
+              <th>Serviços</th>
+            </tr>
+          </thead>
+          <tbody id="pidsTableBody">
+            <tr><td colspan="7" class="text-center text-muted">Nenhum PID registrado</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: HISTÓRICO DE ALARMES ETR 290 -->
+  <div id="tab-alarms" class="tab-content">
+    <div class="panel">
+      <div class="panel-header-toolbar">
+        <div>
+          <h3>🚨 Histórico de Incidentes & Alarmes ETR 101 290</h3>
+          <span class="text-muted">Registro em tempo real de falhas de sincronismo, CC, TEI, CRC32 e PCR</span>
+        </div>
+        <div class="table-filters" style="gap: 8px;">
+          <select id="alarmPriorityFilter" onchange="filterAlarmsTable()">
+            <option value="ALL">Todas as prioridades</option>
+            <option value="P1">Prioridade 1 (Crítica)</option>
+            <option value="P2">Prioridade 2 (Grave)</option>
+            <option value="P3">Prioridade 3 (Informativa)</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" onclick="exportAlarmsCsv()" title="Exportar histórico de alarmes em CSV">
+            <span>📊</span> Exportar Alarmes
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="clearAlarmsHistory()" title="Limpar histórico de alarmes atual">
+            <span>🗑️</span> Limpar
+          </button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table id="alarmsTable" class="data-table">
+          <thead>
+            <tr>
+              <th>Horário</th>
+              <th>Prioridade</th>
+              <th>Tipo de Evento</th>
+              <th>Descrição Técnica do Incidente</th>
+              <th>PID Afetado</th>
+            </tr>
+          </thead>
+          <tbody id="alarmsTableBody">
+            <tr><td colspan="5" class="text-center text-muted">Nenhum alarme ou incidente registrado até o momento.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 4: TERMINAL & LOGS -->
+  <div id="tab-logs" class="tab-content">
+    <div class="panel">
+      <div class="panel-header">
+        <h3>Terminal de Eventos & Logs do Sistema</h3>
+        <button class="btn btn-secondary btn-sm" onclick="clearLogs()">Limpar Log</button>
+      </div>
+      <pre id="systemLogs" class="code-view terminal-view"></pre>
+    </div>
+  </div>
+
+  <!-- 7. CONFORMIDADE ETR 101 290 & GINGA -->
+  <section class="panel etr-panel">
+    <div class="panel-header">
+      <h3>Conformidade ETR 101 290 (Saúde do Mux) & Interatividade Ginga</h3>
+      <span id="etrOverallStatus" class="tag-table" style="background: rgba(16, 185, 129, 0.15); color: #34d399;">Sem Erros</span>
+    </div>
+    <div class="etr-grid-compact">
+      <div class="etr-p-col">
+        <div class="etr-p-title">Prioridade 1 (Crítica)</div>
+        <ul class="etr-check-list">
+          <li><span class="led-dot ok" id="ledSync"></span> TS Sync Byte</li>
+          <li><span class="led-dot ok" id="ledSyncLoss"></span> Sincronismo do Mux</li>
+          <li><span class="led-dot ok" id="ledPat"></span> PAT Presente (&lt;0.5s)</li>
+          <li><span class="led-dot ok" id="ledCc"></span> Sem Erros CC (Continuidade)</li>
+          <li><span class="led-dot ok" id="ledPmt"></span> PMT Presente (&lt;0.5s)</li>
+        </ul>
+      </div>
+      <div class="etr-p-col">
+        <div class="etr-p-title">Prioridade 2 & 3</div>
+        <ul class="etr-check-list">
+          <li><span class="led-dot ok" id="ledTei"></span> Sem Erros TEI (Camada Física)</li>
+          <li><span class="led-dot ok" id="ledCrc"></span> Integridade CRC32</li>
+          <li><span class="led-dot ok" id="ledSdt"></span> Tabela SDT (Nomes dos Canais)</li>
+          <li><span class="led-dot ok" id="ledEit"></span> Guia EIT (EPG)</li>
+          <li><span class="led-dot ok" id="ledGinga"></span> <strong>Ginga DTVi:</strong> <span id="gingaStatusText">Detectado (DSM-CC)</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. GERENCIADOR DE AMOSTRAS .TS -->
+  <section class="panel samples-panel">
+    <div class="panel-header">
+      <div>
+        <h3>Gerenciador de Amostras .TS (1 a 5 Minutos)</h3>
+        <span class="text-muted">Mantém os 5 pedidos mais recentes. Mais antigas são excluídas automaticamente.</span>
+      </div>
+      <div class="sample-actions-bar">
+        <label for="sampleDurationSelect" style="font-size: 0.78rem; color: var(--text-muted);">Duração:</label>
+        <select id="sampleDurationSelect" style="padding: 6px 10px; font-size: 0.82rem;">
+          <option value="1">1 Minuto</option>
+          <option value="2">2 Minutos</option>
+          <option value="3">3 Minutos</option>
+          <option value="4">4 Minutos</option>
+          <option value="5">5 Minutos</option>
+        </select>
+        <button id="btnRecordSample" class="btn btn-primary btn-sm" onclick="triggerSampleRecord()">
+          <span>⏺</span> Iniciar Gravação
+        </button>
+      </div>
+    </div>
+
+    <div id="sampleRecordingStatus" class="sample-progress-box hidden">
+      <div class="spinner"></div>
+      <div style="flex: 1; display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.82rem;">
+          <span id="sampleProgressText" style="font-weight: 600;">Gravando amostra em tempo real...</span>
+          <span id="sampleTimerText" class="font-mono" style="color: var(--accent-cyan); font-weight: 700;">00:00 / 01:00</span>
+        </div>
+        <div class="sample-progress-track">
+          <div id="sampleProgressBar" class="sample-progress-bar" style="width: 0%;"></div>
+        </div>
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="stopSampleRecordManual()">Interromper</button>
+    </div>
+
+    <div class="table-responsive" style="margin-top: 10px;">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Data e Hora</th>
+            <th>Arquivo .TS</th>
+            <th>Duração</th>
+            <th>Tamanho</th>
+            <th>Ação</th>
+          </tr>
+        </thead>
+        <tbody id="samplesTableBody">
+          <tr><td colspan="5" class="text-center text-muted">Nenhuma amostra gravada ainda.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 9. MODAL DE VARREDURA AUTOMÁTICA UHF -->
+  <div id="scanModal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <h3>⚡ Varredura Automática de Canais UHF (14 a 69)</h3>
+          <p class="text-muted">Busca de portadoras físicas, medição de SNR e identificação de emissoras via SDT</p>
+        </div>
+        <button class="btn-close-modal" onclick="closeScanModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="scan-progress-area">
+          <div style="display: flex; justify-content: space-between; font-size: 0.85rem; margin-bottom: 6px;">
+            <span id="scanStatusText" style="font-weight: 600;">Pronto para iniciar varredura</span>
+            <span id="scanPercentText" class="font-mono" style="color: var(--accent-cyan); font-weight: 700;">0%</span>
+          </div>
+          <div class="sample-progress-track">
+            <div id="scanProgressBar" class="sample-progress-bar" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <div class="scan-controls-bar" style="display: flex; gap: 10px; margin-top: 12px;">
+          <button id="btnStartScan" class="btn btn-primary" onclick="startUhfScan()">
+            <span class="btn-icon">▶</span> Iniciar Varredura
+          </button>
+          <button id="btnStopScan" class="btn btn-danger hidden" onclick="stopUhfScan()">
+            <span class="btn-icon">⏹</span> Interromper Varredura
+          </button>
+        </div>
+
+        <div style="margin-top: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <h4 style="font-size: 0.9rem; font-weight: 600;">Canais Encontrados (<span id="scanFoundCount">0</span>)</h4>
+          </div>
+          <div class="table-responsive" style="max-height: 260px; overflow-y: auto;">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Canal</th>
+                  <th>Frequência</th>
+                  <th>Emissora / Serviço</th>
+                  <th>Sinal / SNR</th>
+                  <th>Ação</th>
+                </tr>
+              </thead>
+              <tbody id="scanResultsBody">
+                <tr><td colspan="5" class="text-center text-muted">Clique em "Iniciar Varredura" para escanear os canais 14 a 69.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 10. MODAL DE CONFIGURAÇÃO DA API JSON (GRAFANA & REST) -->
+  <div id="apiConfigModal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <h3>⚙️ Configurações da API JSON & Grafana</h3>
+          <p class="text-muted">Selecione quais seções técnicas serão retornadas na rota <code>/api/metrics/json</code> (salvo permanentemente)</p>
+        </div>
+        <button class="btn-close-modal" onclick="closeApiConfigModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 0.82rem; color: var(--text-dim); margin-bottom: 12px;">
+          Desmarque os dados desnecessários para reduzir tráfego e latência de rede no seu Grafana ou sistema de monitoramento:
+        </p>
+
+        <div class="api-fields-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px;">
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiRf" checked>
+            <div>
+              <strong>📶 Sinal RF & Telemetria</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">RSSI (dBm), SNR (dB), Lock, BER</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiTs" checked>
+            <div>
+              <strong>📊 Métricas de MUX & Bitrate</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Bitrate Total, Útil, Null, Sync/CC/TEI</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiEtr290" checked>
+            <div>
+              <strong>🛡️ Conformidade ETR 101 290</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Prioridades 1, 2 e 3 (P1, P2, P3)</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiLoudness" checked>
+            <div>
+              <strong>🔊 Loudness & Áudio ABNT</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">-24 LUFS, Short-Term, True Peak, LRA</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiPcr" checked>
+            <div>
+              <strong>⏱️ PCR Timing & Jitter</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Intervalo de repetição (ms) e Jitter (ns)</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiPids" checked>
+            <div>
+              <strong>🔢 Tabela Completa de PIDs</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Bitrate individual, pacotes e codecs</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiServices" checked>
+            <div>
+              <strong>📺 Programas & Serviços (SDT)</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Nomes de canais, PMT PIDs e streams</div>
+            </div>
+          </label>
+          <label class="checkbox-card">
+            <input type="checkbox" id="chkApiAlarms" checked>
+            <div>
+              <strong>🚨 Histórico de Incidentes / Alarmes</strong>
+              <div class="text-muted" style="font-size: 0.74rem;">Log em tempo real de falhas ETR 290</div>
+            </div>
+          </label>
+        </div>
+
+        <div style="background: rgba(0, 0, 0, 0.25); padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color); margin-bottom: 14px;">
+          <span style="font-size: 0.78rem; font-weight: 600; color: var(--text-dim);">URL Direta do Endpoint:</span>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <a href="/api/metrics/json" target="_blank" class="font-mono" style="color: var(--accent-cyan); font-size: 0.84rem; text-decoration: none;">/api/metrics/json ↗</a>
+            <span class="text-muted" style="font-size: 0.74rem;">HTTP GET (JSON REST)</span>
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn btn-secondary" onclick="closeApiConfigModal()">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveApiConfig()">
+            <span>💾</span> Salvar Configurações
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

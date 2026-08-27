@@ -1,0 +1,16 @@
+{
+  "name": "ts-analyzer-isdbt",
+  "version": "1.0.0",
+  "description": "Analisador web de Transport Stream (MPEG-TS) para dongles ISDB-T (SBTVD) via DVB API, com captura de frame a cada 3 segundos.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
