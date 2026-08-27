@@ -106,6 +106,31 @@ sudo apt install -y ffmpeg dvb-tools dtv-scan-tables
 
 # 3. Garanta permissão de acesso ao sintonizador USB para o seu usuário
 sudo usermod -aG video $USER
+
+sudo apt install -y ffmpeg dvb-tools dtv-scan-tables nodejs npm git firmware-misc-nonfree
+
+wget https://github.com/tsduck/tsduck/releases/download/v3.44-4676/tsduck_3.44-4676.debian13_amd64.deb
+
+ sudo apt install ./tsduck_3.44-4676.debian13_amd64.deb
+
+# 1. Baixar o arquivo de firmware oficial direto do repositório do kernel Linux
+sudo wget -O /lib/firmware/dvb-usb-dib0700-1.20.fw https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain/dvb-usb-dib0700-1.20.fw
+
+# 2. Atualizar as permissões do arquivo
+sudo chmod 644 /lib/firmware/dvb-usb-dib0700-1.20.fw
+
+# 3. Recarregar o módulo do driver
+sudo modprobe -r dvb_usb_dib0700
+sudo modprobe dvb_usb_dib0700
+
+dmesg | grep -i dvb
+
+ls -la /dev/dvb/
+
+ls -la /dev/dvb/adapter0/
+tsp --version
+
+sudo npm install -g pm2@latest
 ```
 
 ### 2. No Windows
