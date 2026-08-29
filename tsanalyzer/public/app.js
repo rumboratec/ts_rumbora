@@ -812,15 +812,15 @@ function renderEpgTimeline(events) {
       const elapsedMs = Math.max(0, now - startMs);
       progressPct = Math.min(100, Math.max(0, Math.round((elapsedMs / durMs) * 100)));
 
-      const startStr = new Date(startMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-      const endStr = new Date(endMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      const startStr = new Date(startMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Fortaleza' });
+      const endStr = new Date(endMs).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Fortaleza' });
       timeLabel = `${startStr} – ${endStr}`;
       const remMin = Math.max(0, Math.round((endMs - now) / 60000));
       remainingLabel = `Restam ${remMin} min (${progressPct}%)`;
     }
 
     const upcomingHtml = upcomingEvents.map(u => {
-      const uStart = u.startTime ? new Date(u.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--';
+      const uStart = u.startTime ? new Date(u.startTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Fortaleza' }) : '--:--';
       const uDur = u.durationSec ? `${Math.round(u.durationSec / 60)} min` : '';
       return `
         <div class="epg-upcoming-item" title="${u.eventName || 'Programa'}">
@@ -881,7 +881,7 @@ function renderEpgTimeline(events) {
   lastEpgRenderTime = Date.now();
   epgHasRendered = true;
   if (epgLastUpdateText) {
-    epgLastUpdateText.textContent = `Linha do Tempo EPG atualizada às ${new Date(lastEpgRenderTime).toLocaleTimeString('pt-BR')} (${events.length} programas na grade)`;
+    epgLastUpdateText.textContent = `Linha do Tempo EPG atualizada às ${new Date(lastEpgRenderTime).toLocaleTimeString('pt-BR', { timeZone: 'America/Fortaleza' })} (${events.length} programas na grade)`;
   }
 }
 
@@ -945,11 +945,11 @@ function renderEpgList(events) {
     if (e.startTime) {
       try {
         const dStart = new Date(e.startTime);
-        dateFormatted = dStart.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
-        const startStr = dStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        dateFormatted = dStart.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Fortaleza' });
+        const startStr = dStart.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Fortaleza' });
         if (e.durationSec) {
           const dEnd = new Date(dStart.getTime() + (e.durationSec * 1000));
-          const endStr = dEnd.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          const endStr = dEnd.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Fortaleza' });
           timeFormatted = `${startStr} às ${endStr}`;
         } else {
           timeFormatted = startStr;
@@ -985,7 +985,7 @@ function renderEpgList(events) {
   lastEpgRenderTime = Date.now();
   epgHasRendered = true;
   if (epgLastUpdateText) {
-    epgLastUpdateText.textContent = `Última atualização: ${new Date(lastEpgRenderTime).toLocaleTimeString('pt-BR')} (${events.length} programas) • Automático a cada 6h ou via botão`;
+    epgLastUpdateText.textContent = `Última atualização: ${new Date(lastEpgRenderTime).toLocaleTimeString('pt-BR', { timeZone: 'America/Fortaleza' })} (${events.length} programas) • Automático a cada 6h ou via botão`;
   }
 }
 
@@ -1508,7 +1508,7 @@ function renderTablesInspector(data) {
   const totDiv = document.getElementById('totDetails');
   const totList = tables.tot || (data.tot ? [data.tot] : []);
   if (totDiv && totList.length) {
-    totDiv.innerHTML = totList.map(t => `<div class="stat-card"><strong>Horário Oficial Transmitido:</strong> ${t.utcTime ? new Date(t.utcTime).toLocaleString('pt-BR') : '-'} (UTC-3)</div>`).join('');
+    totDiv.innerHTML = totList.map(t => `<div class="stat-card"><strong>Horário Oficial Transmitido:</strong> ${t.utcTime ? new Date(t.utcTime).toLocaleString('pt-BR', { timeZone: 'America/Fortaleza' }) : '-'} (Fuso Ceará / UTC-3)</div>`).join('');
   }
 
   // Raw

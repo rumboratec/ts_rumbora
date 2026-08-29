@@ -109,10 +109,11 @@ function parseMjdBcd(mjd, bcd) {
   const s = bcd && bcd.length >= 3 ? (((bcd[2] >> 4) * 10) + (bcd[2] & 0x0f)) : 0;
 
   try {
-    const d = new Date(Date.UTC(year, month - 1, day, h, m, s));
-    return d.toISOString();
+    const pad = (n) => String(n).padStart(2, '0');
+    // Padrão SBTVD (Brasil / Ceará): as emissoras transmitem MJD/BCD no fuso local UTC-3 (America/Fortaleza)
+    return `${year}-${pad(month)}-${pad(day)}T${pad(h)}:${pad(m)}:${pad(s)}-03:00`;
   } catch (e) {
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} UTC`;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')} ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')} (UTC-3)`;
   }
 }
 
